@@ -1,0 +1,66 @@
+services:
+
+  webui:
+    image: ghcr.io/open-webui/open-webui:main
+    container_name: open-webui
+    ports:
+      - "3000:8080"
+    environment:
+      - OLLAMA_BASE_URL=http://ollama:11434
+    volumes:
+      - open-webui:/app/backend/data
+    depends_on:
+      - ollama
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - ai_ollama_net
+
+  ollama:
+    image: ollama/ollama
+    container_name: ollama
+    healthcheck:
+      test: ["CMD", "ollama", "--version"]
+    command: serve
+    volumes:
+      - ollama:/root/.ollama
+    networks:
+      - ai_ollama_net
+    expose:
+      - "11434"  # Only accessible within the internal network
+
+  agent:
+    build: ./agent
+    container_name: agent
+    depends_on:
+      - ollama
+      - docker
+    environment:
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - DOCKER_HOST=tcp://docker:2375
+    volumes:
+      - ./agent/log:/app/data  # Bind-mount logs to the host directory
+    networks:
+      - ai_ollama_net
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  docker:  # Docker-in-Docker service
+    image: docker:dind
+    container_name: docker
+    privileged: true
+    environment:
+      - DOCKER_TLS_CERTDIR=
+    expose:
+      - "2375"
+    networks:
+      - ai_ollama_net
+
+volumes:
+  ollama:
+  open-webui:
+
+networks:
+  ai_ollama_net:
+    internal: true  # No external access
+
