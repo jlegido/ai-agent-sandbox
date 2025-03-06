@@ -62,5 +62,3 @@ volumes:
 
 networks:
   ai_ollama_net:
-    internal: true  # No external access
-
