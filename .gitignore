@@ -1,1 +1,23 @@
 agent/log/*
+# Ignore environment variable files
+.env
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual environment
+venv/
+.env/
+*.venv/
+
+# Docker-related files
+*.log
+docker-compose.override.yml
+
+# Ignore system-specific files
+.DS_Store
+Thumbs.db
+
