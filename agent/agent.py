@@ -52,6 +52,18 @@ def log_to_file(content):
     except Exception as e:
         print(f"Error writing to log file: {e}")
 
+def rotate_log_file():
+    """Rotates the log file by renaming it with a timestamp."""
+    log_file_path = "/app/data/log.txt"
+    try:
+        if os.path.exists(log_file_path):
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            new_log_file_name = f"{log_file_path}.{timestamp}"
+            os.rename(log_file_path, new_log_file_name)
+            print(f"Rotated log file to: {new_log_file_name}")
+    except Exception as e:
+        print(f"Error rotating log file: {e}")
+
 
 def get_ai_solution(error_message, commands, repo_url):
     """Sends the error message, commands, and repo URL to Ollama and returns the response with retry logic."""
@@ -104,6 +116,7 @@ def get_ai_solution(error_message, commands, repo_url):
 def main():
     """Main function to execute the commands, handle errors, and interact with Ollama."""
 
+    rotate_log_file()  # Rotate the log file before each execution
     cleanup()
 
     commands = """
