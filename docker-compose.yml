@@ -11,6 +11,7 @@ services:
       MODEL: ${OLLAMA_MODEL:-deepseek-coder}  # Define the MODEL variable and default
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
+      - ./agent/log:/app/data  # Bind-mount logs to the host directory
     privileged: false
 
   ollama:

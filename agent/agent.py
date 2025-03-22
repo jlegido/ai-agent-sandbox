@@ -4,6 +4,7 @@ import shutil
 import requests
 import json
 import time  # Import the time module
+from datetime import datetime  # Import the datetime module
 
 from dotenv import load_dotenv
 
@@ -42,6 +43,16 @@ def cleanup():
     except Exception as e:
         print(f"Error during cleanup: {e}")
 
+def log_to_file(content):
+    """Logs the given content to a file with a timestamp."""
+    log_file_path = "/app/data/log.txt"  # Path to the log file
+    try:
+        with open(log_file_path, "a") as log_file:
+            log_file.write(f"{datetime.now()} - {content}\n")
+    except Exception as e:
+        print(f"Error writing to log file: {e}")
+
+
 def get_ai_solution(error_message, commands, repo_url):
     """Sends the error message, commands, and repo URL to Ollama and returns the response with retry logic."""
     prompt = f"""You are a Docker expert. The following error occurred while trying to build a Docker Compose project:
@@ -64,16 +75,20 @@ def get_ai_solution(error_message, commands, repo_url):
         "stream": False
     }
 
+    log_to_file(f"Ollama Prompt:\n{prompt}")  # Log the prompt before sending
+
     for attempt in range(MAX_RETRIES):
         try:
             response = requests.post(OLLAMA_URL, data=json.dumps(data), stream=False)
             response.raise_for_status()  # Raise HTTPError for bad responses (4xx or 5xx)
             json_response = response.json()
-            ai_solution = json_response.get("response", "No response from AI.")
+            ai_solution = json_response.get("response", "response not found")
+            log_to_file(f"Ollama Response:\n{ai_solution}")  # Log the response
 
             return ai_solution
 
         except requests.exceptions.RequestException as e:
+            log_to_file(f"Attempt {attempt + 1}/{MAX_RETRIES}: Error communicating with Ollama: {str(e)}")
             print(f"Attempt {attempt + 1}/{MAX_RETRIES}: Error communicating with Ollama: {e}")
             if attempt < MAX_RETRIES - 1:
                 time.sleep(RETRY_DELAY)  # Wait before retrying
@@ -81,9 +96,10 @@ def get_ai_solution(error_message, commands, repo_url):
                 print("Max retries reached.  Returning error message.")
                 return "Error communicating with AI after multiple retries. Check Ollama is running and accessible."
         except json.JSONDecodeError:
+            log_to_file("Error decoding JSON response from AI.")
             return "Unexpected error occurred during JSON decoding."
 
-        return "Unexpected error occurred."
+    return "Unexpected error occurred."
 
 def main():
     """Main function to execute the commands, handle errors, and interact with Ollama."""
