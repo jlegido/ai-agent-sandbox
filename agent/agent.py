@@ -1,13 +1,10 @@
 import subprocess
 import os
 import shutil
-import requests
-import json
-import time  # Import the time module
-from datetime import datetime  # Import the datetime module
+import re  # Import the regular expression module
+from datetime import datetime
 
 from dotenv import load_dotenv
-
 import google.generativeai as genai
 
 load_dotenv()
@@ -17,25 +14,24 @@ GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 
 def call_gemini_api(prompt):
     """Calls the Gemini API with the given prompt."""
-    log_to_file(f"Gemini API Prompt:\n{prompt}") #Log Prompt to File
+    log_to_file(f"Gemini API Prompt:\n{prompt}")
     if not GEMINI_API_KEY:
         raise ValueError("GEMINI_API_KEY environment variable not set. MODEL contains gemini, but no API key provided.")
 
     genai.configure(api_key=GEMINI_API_KEY)
-
-    model = genai.GenerativeModel('gemini-1.5-flash')  # Use Gemini 2.0 Flash
+    model = genai.GenerativeModel('gemini-1.5-flash')
 
     try:
         response = model.generate_content(prompt)
-        response_text = response.text  # Extract the text from the response
-        log_to_file(f"Gemini API Response:\n{response_text}")  #Log response to file
+        response_text = response.text
+        log_to_file(f"Gemini API Response:\n{response_text}")
         return response_text
     except Exception as e:
         print(f"Error calling Gemini API: {e}")
         return None
 
-def generate_response(prompt, max_tokens=1000):
-    """Generates a response based on the configured model (Gemini)."""
+def generate_response(prompt):
+    """Generates a response using the configured model (Gemini)."""
     if "gemini" in MODEL.lower():
         response = call_gemini_api(prompt)
         if response:
@@ -47,21 +43,26 @@ def generate_response(prompt, max_tokens=1000):
 
 def execute_commands(commands):
     """Executes a list of shell commands and returns the output and error."""
-    print(f"Executing commands:\n{commands}")  # Print commands to stdout BEFORE execution
+    print(f"Executing commands:\n{commands}")
     try:
         process = subprocess.run(
             commands,
             shell=True,
-            cwd="/tmp",  # Run commands in /tmp
+            cwd="/tmp",
             capture_output=True,
             text=True,
             check=True  # Raise an exception if the command fails
         )
-        print(f"Commands executed successfully.")  # Print success message
+        print(f"Commands executed successfully.")
         return process.stdout, process.stderr
     except subprocess.CalledProcessError as e:
-        print(f"Commands failed with error:")  # Print failure message
-        return e.output, e.stderr
+        print(f"Commands failed with error:")
+        return e.stdout, e.stderr  # Capture stdout even on error
+
+def extract_code(text):
+    """Extracts code blocks from a markdown-formatted text."""
+    code_blocks = re.findall(r"```(?:\w+)?\n(.*?)\n```", text, re.DOTALL)
+    return code_blocks
 
 def cleanup():
     """Removes the ai-agent-wordpress directory if it exists."""
@@ -75,7 +76,7 @@ def cleanup():
 
 def log_to_file(content):
     """Logs the given content to a file with a timestamp."""
-    log_file_path = "/app/data/log.txt"  # Path to the log file
+    log_file_path = "/app/data/log.txt"
     try:
         with open(log_file_path, "a") as log_file:
             log_file.write(f"{datetime.now()} - {content}\n")
@@ -94,61 +95,71 @@ def rotate_log_file():
     except Exception as e:
         print(f"Error rotating log file: {e}")
 
-
-def get_ai_solution(error_message, commands, repo_url):
+def get_ai_solution(error_message, commands, repo_url, attempt=1):
     """Sends the error message, commands, and repo URL to Gemini and returns the response."""
-    prompt = f"""You are a Docker expert. The following error occurred while trying to build a Docker Compose project:
+    prompt = f"""You are a Docker expert.  This is attempt {attempt} to solve the problem. The following error occurred while trying to build a Docker Compose project:
 
     Error Message:
     {error_message}
 
-    Commands Executed:
+    Commands Executed (Previous Attempt):
     {commands}
 
     Git Repository:
     {repo_url}
 
-    Provide a concise explanation of the error and suggest a fix.  Format your response as a markdown code block with the corrected commands or Dockerfile snippets, if applicable. If the error is environment-related or permission related, consider asking for Docker version or `whoami` inside the container.
+    Provide a concise explanation of the error and suggest a fix. Format your response as a markdown code block with the corrected commands or Dockerfile snippets. Only provide a full code example.
     """
 
-    #data = {   # Remove unneeded code
-    #    "prompt": prompt,
-    #    "model": MODEL,  # Use the MODEL environment variable
-    #    "stream": False
-    #}
-
-    #log_to_file(f"Ollama Prompt:\n{prompt}")  # Remove OLLAMA specific logs
-
     response = generate_response(prompt)
+    return response
 
 def main():
     """Main function to execute the commands, handle errors, and interact with Gemini."""
 
-    rotate_log_file()  # Rotate the log file before each execution
+    rotate_log_file()
     cleanup()
 
-    commands = """
+    repo_url = "https://github.com/jlegido/ai-agent-wordpress"
+    initial_commands = """
     cd /tmp
     rm -fr ai-agent-wordpress
     git clone https://github.com/jlegido/ai-agent-wordpress
     cd ai-agent-wordpress
     docker compose build
     """
-    print(f"Executing commands:\n{commands}")  #Print current command to stdout
 
-    stdout, stderr = execute_commands(commands)
+    commands = initial_commands  # Start with initial commands
+    stderr = "No Error"  # Initialize
 
-    if stderr:
-        print("Error output:")
-        print(stderr)
+    attempt = 1  # Attempt number
 
-        ai_solution = get_ai_solution(stderr, commands, "https://github.com/jlegido/ai-agent-wordpress")
-        print("AI Response:", ai_solution)
+    while "Error" in stderr and attempt <= 3: # Limited to 3 attempts
+        print(f"Attempt {attempt}:")
+        stdout, stderr = execute_commands(commands)
 
-    else:
-        print("Command execution successful!")
-        print("Standard output:")
-        print(stdout)
+        if stderr:
+            print("Error output:")
+            print(stderr)
+
+            ai_solution = get_ai_solution(stderr, commands, repo_url, attempt) # Send attempt number
+            print("AI Response:", ai_solution)
+
+            code_blocks = extract_code(ai_solution)
+            if code_blocks:
+                commands = code_blocks[0]  # Use the first code block as commands
+                print(f"Extracted commands:\n{commands}")
+            else:
+                print("No code block found in AI response.  Stopping.")
+                break  # Stop if no code is found.
+
+        else:
+            print("Command execution successful!")
+            print("Standard output:")
+            print(stdout)
+            break  # Exit loop if successful
+
+        attempt += 1
 
     cleanup()
 
