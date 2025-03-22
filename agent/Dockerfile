@@ -4,13 +4,11 @@ FROM python:3.9-slim-buster
 RUN apt-get update && apt-get install -y \
     git \
     curl \
-    docker.io \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Docker Compose V2 manually
-RUN DOCKER_COMPOSE_VERSION=$(curl -s https://api.github.com/repos/docker/compose/releases/latest | grep tag_name | cut -d '"' -f 4) \
-    && curl -L https://github.com/docker/compose/releases/download/${DOCKER_COMPOSE_VERSION}/docker-compose-linux-aarch64 -o /usr/local/bin/docker-compose \
-    && chmod +x /usr/local/bin/docker-compose
+# Install Docker manually
+RUN curl -fsSL https://get.docker.com -o get-docker.sh \
+    && sh get-docker.sh
 
 # Set working directory
 WORKDIR /app
@@ -21,6 +19,9 @@ COPY requirements.txt .
 
 # Install Python dependencies
 RUN pip install -r requirements.txt
+
+# Define environment variables
+ENV MODEL="deepseek-coder"
 
 # Entrypoint to run the agent
 CMD ["python", "agent.py"]

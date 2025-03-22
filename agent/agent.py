@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://ollama:11434/api/generate")  # Default Ollama URL
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "deepseek-coder")  # Get the OLLAMA_MODEL environment variable
+MODEL = os.getenv("MODEL", "deepseek-coder")  # Get the MODEL environment variable
 MAX_RETRIES = 3
 RETRY_DELAY = 2  # seconds
 
@@ -57,7 +57,7 @@ def get_ai_solution(error_message, commands, repo_url):
 
     data = {
         "prompt": prompt,
-        "model": OLLAMA_MODEL,  # Use the OLLAMA_MODEL environment variable
+        "model": MODEL,  # Use the MODEL environment variable
         "stream": False
     }
 
@@ -77,10 +77,10 @@ def get_ai_solution(error_message, commands, repo_url):
             else:
                 print("Max retries reached.  Returning error message.")
                 return "Error communicating with AI after multiple retries. Check Ollama is running and accessible."
-        except json.JSONDecodeError:
-            return "Error decoding JSON response from AI."
+            except json.JSONDecodeError:
+                return "Error decoding JSON response from AI."
 
-    return "Unexpected error occurred."
+        return "Unexpected error occurred."
 
 def main():
     """Main function to execute the commands, handle errors, and interact with Ollama."""
@@ -92,7 +92,7 @@ def main():
     rm -fr ai-agent-wordpress
     git clone https://github.com/jlegido/ai-agent-wordpress
     cd ai-agent-wordpress
-    docker-compose build
+    docker compose build
     """
     print(f"Executing commands:\n{commands}")
     stdout, stderr = execute_commands(commands)
