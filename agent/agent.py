@@ -1,69 +1,115 @@
-import random
+import subprocess
+import os
+import shutil
 import requests
-import time
-from datetime import datetime
+import json
+import time  # Import the time module
 
-# Define the Ollama API endpoint
-OLLAMA_API_URL = "http://ollama:11434/v1/chat/completions"
+from dotenv import load_dotenv
 
-# Function to log the questions and answers into a file
-def log_to_file(content):
-    with open("/app/data/log.txt", "a") as log_file:
-        log_file.write(f"{datetime.now()} - {content}\n")
+load_dotenv()
 
-# Function to get a response from Ollama
-def get_ollama_response(prompt):
-    headers = {
-        "Content-Type": "application/json",
-    }
-    data = {
-        "model": "llama3.2-vision",
-        "messages": [{"role": "user", "content": prompt}],
-    }
+OLLAMA_URL = os.getenv("OLLAMA_URL", "http://ollama:11434/api/generate")  # Default Ollama URL
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "deepseek-coder")  # Get the OLLAMA_MODEL environment variable
+MAX_RETRIES = 3
+RETRY_DELAY = 2  # seconds
 
+def execute_commands(commands):
+    """Executes a list of shell commands and returns the output and error."""
     try:
-        response = requests.post(OLLAMA_API_URL, json=data, headers=headers)
-        response.raise_for_status()  # Raise an error for bad responses (4xx or 5xx)
-        return response.json()['choices'][0]['message']['content'].strip()
-    except requests.exceptions.RequestException as e:
-        log_to_file(f"Error communicating with Ollama: {str(e)}")
-        return None
+        process = subprocess.run(
+            commands,
+            shell=True,
+            cwd="/tmp",  # Run commands in /tmp
+            capture_output=True,
+            text=True,
+            check=True  # Raise an exception if the command fails
+        )
+        return process.stdout, process.stderr
+    except subprocess.CalledProcessError as e:
+        return e.output, e.stderr
 
-# Main function to start the guessing game
-def main():
-    # Generate a random number between 1 and 10
-    secret_number = random.randint(1, 10)
-    log_to_file(f"Secret number generated: {secret_number}")  # Log the secret number for debugging purposes
+def cleanup():
+    """Removes the ai-agent-wordpress directory if it exists."""
+    try:
+        repo_dir = "/tmp/ai-agent-wordpress"
+        if os.path.exists(repo_dir):
+            shutil.rmtree(repo_dir)
+            print(f"Successfully removed {repo_dir}")
+    except Exception as e:
+        print(f"Error during cleanup: {e}")
 
+def get_ai_solution(error_message, commands, repo_url):
+    """Sends the error message, commands, and repo URL to Ollama and returns the response with retry logic."""
+    prompt = f"""You are a Docker expert. The following error occurred while trying to build a Docker Compose project:
 
-    # Ask Ollama to guess the number, only expect a number in response
-    prompt = "Guess a number between 1 and 10. Reply only with the number."
+    Error Message:
+    {error_message}
 
-    while True:
-        log_to_file(f"Question: {prompt}")
-        reply = get_ollama_response(prompt)
-        if reply is None:
-            log_to_file("Ollama failed to respond.")
-            break
+    Commands Executed:
+    {commands}
 
-        log_to_file(f"Reply: {reply}")
+    Git Repository:
+    {repo_url}
 
-        # Check if Ollama's guess is correct
+    Provide a concise explanation of the error and suggest a fix.  Format your response as a markdown code block with the corrected commands or Dockerfile snippets, if applicable. If the error is environment-related or permission related, consider asking for Docker version or `whoami` inside the container.
+    """
+
+    data = {
+        "prompt": prompt,
+        "model": OLLAMA_MODEL,  # Use the OLLAMA_MODEL environment variable
+        "stream": False
+    }
+
+    for attempt in range(MAX_RETRIES):
         try:
-            guess = int(reply)
-            if guess == secret_number:
-                log_to_file(f"Ollama guessed the correct number: {secret_number}")
-                print("Ollama guessed the correct number!")
-                break
+            response = requests.post(OLLAMA_URL, data=json.dumps(data), stream=False)
+            response.raise_for_status()  # Raise HTTPError for bad responses (4xx or 5xx)
+            json_response = response.json()
+            ai_solution = json_response.get("response", "No response from AI.")
+
+            return ai_solution
+
+        except requests.exceptions.RequestException as e:
+            print(f"Attempt {attempt + 1}/{MAX_RETRIES}: Error communicating with Ollama: {e}")
+            if attempt < MAX_RETRIES - 1:
+                time.sleep(RETRY_DELAY)  # Wait before retrying
             else:
-                log_to_file(f"Ollama guessed wrong. The guess was {guess}, the correct number is {secret_number}")
-                prompt = "No, keep trying with a different number, between 1 and 10. Respond only with the number."
-        except ValueError:
-            log_to_file(f"Ollama did not provide a valid number. Guess: {reply}")
-            prompt = "No, keep trying with a different number, but only respond with the number."
-        
-        time.sleep(2)  # Optional: Add a small delay between retries
+                print("Max retries reached.  Returning error message.")
+                return "Error communicating with AI after multiple retries. Check Ollama is running and accessible."
+        except json.JSONDecodeError:
+            return "Error decoding JSON response from AI."
+
+    return "Unexpected error occurred."
+
+def main():
+    """Main function to execute the commands, handle errors, and interact with Ollama."""
+
+    cleanup()
+
+    commands = """
+    cd /tmp
+    rm -fr ai-agent-wordpress
+    git clone https://github.com/jlegido/ai-agent-wordpress
+    cd ai-agent-wordpress
+    docker-compose build
+    """
+    print(f"Executing commands:\n{commands}")
+    stdout, stderr = execute_commands(commands)
+
+    if stderr:
+        print("Error output:")
+        print(stderr)
+
+        ai_solution = get_ai_solution(stderr, commands, "https://github.com/jlegido/ai-agent-wordpress")
+        print("AI Response:", ai_solution)
+
+    else:
+        print("Command execution successful!")
+        print("Standard output:")
+        print(stdout)
+
+    cleanup()
 
 if __name__ == "__main__":
     main()
-

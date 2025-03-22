@@ -1,64 +1,31 @@
+version: "3.8"
 services:
-
-  webui:
-    image: ghcr.io/open-webui/open-webui:main
-    container_name: open-webui
-    ports:
-      - "3000:8080"
-    environment:
-      - OLLAMA_BASE_URL=http://ollama:11434
-    volumes:
-      - open-webui:/app/backend/data
+  agent:
+    build:
+      context: ./agent
+      dockerfile: Dockerfile
+    container_name: agent
     depends_on:
       - ollama
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    networks:
-      - ai_ollama_net
+    environment:
+      OLLAMA_URL: http://ollama:11434/api/generate
+      MODEL: ${OLLAMA_MODEL:-deepseek-coder}  # Define the MODEL variable and default
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    privileged: false
 
   ollama:
     image: ollama/ollama
     container_name: ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama #Persist data between restarts
     healthcheck:
-      test: ["CMD", "ollama", "--version"]
-    command: serve
-    volumes:
-      - ollama:/root/.ollama
-    networks:
-      - ai_ollama_net
-    expose:
-      - "11434"  # Only accessible within the internal network
-
-  agent:
-    build: ./agent
-    container_name: agent
-    depends_on:
-      - ollama
-      - docker
-    environment:
-      - OLLAMA_BASE_URL=http://ollama:11434
-      - DOCKER_HOST=tcp://docker:2375
-    volumes:
-      - ./agent/log:/app/data  # Bind-mount logs to the host directory
-    networks:
-      - ai_ollama_net
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-
-  docker:  # Docker-in-Docker service
-    image: docker:dind
-    container_name: docker
-    privileged: true
-    environment:
-      - DOCKER_TLS_CERTDIR=
-    expose:
-      - "2375"
-    networks:
-      - ai_ollama_net
+      test: ["CMD", "curl", "-f", "http://localhost:11434"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
 volumes:
-  ollama:
-  open-webui:
-
-networks:
-  ai_ollama_net:
+  ollama_data:
