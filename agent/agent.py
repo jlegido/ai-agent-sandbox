@@ -8,12 +8,42 @@ from datetime import datetime  # Import the datetime module
 
 from dotenv import load_dotenv
 
+import google.generativeai as genai
+
 load_dotenv()
 
-OLLAMA_URL = os.getenv("OLLAMA_URL", "http://ollama:11434/api/generate")  # Default Ollama URL
-MODEL = os.getenv("MODEL", "deepseek-coder")  # Get the MODEL environment variable
-MAX_RETRIES = 3
-RETRY_DELAY = 2  # seconds
+MODEL = os.environ.get("MODEL", "gemini")
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+
+def call_gemini_api(prompt):
+    """Calls the Gemini API with the given prompt."""
+    log_to_file(f"Gemini API Prompt:\n{prompt}") #Log Prompt to File
+    if not GEMINI_API_KEY:
+        raise ValueError("GEMINI_API_KEY environment variable not set. MODEL contains gemini, but no API key provided.")
+
+    genai.configure(api_key=GEMINI_API_KEY)
+
+    model = genai.GenerativeModel('gemini-1.5-flash')  # Use Gemini 2.0 Flash
+
+    try:
+        response = model.generate_content(prompt)
+        response_text = response.text  # Extract the text from the response
+        log_to_file(f"Gemini API Response:\n{response_text}")  #Log response to file
+        return response_text
+    except Exception as e:
+        print(f"Error calling Gemini API: {e}")
+        return None
+
+def generate_response(prompt, max_tokens=1000):
+    """Generates a response based on the configured model (Gemini)."""
+    if "gemini" in MODEL.lower():
+        response = call_gemini_api(prompt)
+        if response:
+            return response
+        else:
+            return "Error: Failed to generate response from Gemini API."
+    else:
+        return "Error: Gemini API not enabled. Set MODEL environment variable to include 'gemini'."
 
 def execute_commands(commands):
     """Executes a list of shell commands and returns the output and error."""
@@ -66,7 +96,7 @@ def rotate_log_file():
 
 
 def get_ai_solution(error_message, commands, repo_url):
-    """Sends the error message, commands, and repo URL to Ollama and returns the response with retry logic."""
+    """Sends the error message, commands, and repo URL to Gemini and returns the response."""
     prompt = f"""You are a Docker expert. The following error occurred while trying to build a Docker Compose project:
 
     Error Message:
@@ -81,40 +111,18 @@ def get_ai_solution(error_message, commands, repo_url):
     Provide a concise explanation of the error and suggest a fix.  Format your response as a markdown code block with the corrected commands or Dockerfile snippets, if applicable. If the error is environment-related or permission related, consider asking for Docker version or `whoami` inside the container.
     """
 
-    data = {
-        "prompt": prompt,
-        "model": MODEL,  # Use the MODEL environment variable
-        "stream": False
-    }
+    #data = {   # Remove unneeded code
+    #    "prompt": prompt,
+    #    "model": MODEL,  # Use the MODEL environment variable
+    #    "stream": False
+    #}
 
-    log_to_file(f"Ollama Prompt:\n{prompt}")  # Log the prompt before sending
+    #log_to_file(f"Ollama Prompt:\n{prompt}")  # Remove OLLAMA specific logs
 
-    for attempt in range(MAX_RETRIES):
-        try:
-            response = requests.post(OLLAMA_URL, data=json.dumps(data), stream=False)
-            response.raise_for_status()  # Raise HTTPError for bad responses (4xx or 5xx)
-            json_response = response.json()
-            ai_solution = json_response.get("response", "response not found")
-            log_to_file(f"Ollama Response:\n{ai_solution}")  # Log the response
-
-            return ai_solution
-
-        except requests.exceptions.RequestException as e:
-            log_to_file(f"Attempt {attempt + 1}/{MAX_RETRIES}: Error communicating with Ollama: {str(e)}")
-            print(f"Attempt {attempt + 1}/{MAX_RETRIES}: Error communicating with Ollama: {e}")
-            if attempt < MAX_RETRIES - 1:
-                time.sleep(RETRY_DELAY)  # Wait before retrying
-            else:
-                print("Max retries reached.  Returning error message.")
-                return "Error communicating with AI after multiple retries. Check Ollama is running and accessible."
-        except json.JSONDecodeError:
-            log_to_file("Error decoding JSON response from AI.")
-            return "Unexpected error occurred during JSON decoding."
-
-    return "Unexpected error occurred."
+    response = generate_response(prompt)
 
 def main():
-    """Main function to execute the commands, handle errors, and interact with Ollama."""
+    """Main function to execute the commands, handle errors, and interact with Gemini."""
 
     rotate_log_file()  # Rotate the log file before each execution
     cleanup()

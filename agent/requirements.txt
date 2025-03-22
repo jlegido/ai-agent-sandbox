@@ -2,3 +2,7 @@ docker
 openai # Or google-generativeai, or whatever AI library you use
 python-dotenv
 requests # Add requests here since you use in current version of agent.py
+
+ollama
+tiktoken
+google-generativeai

@@ -4,28 +4,14 @@ services:
       context: ./agent
       dockerfile: Dockerfile
     container_name: agent
-    depends_on:
-      - ollama
     environment:
-      OLLAMA_URL: http://ollama:11434/api/generate
-      MODEL: ${OLLAMA_MODEL:-deepseek-coder}  # Define the MODEL variable and default
+      MODEL: ${MODEL:-default}  # Define the MODEL variable and default
+      GEMINI_API_KEY: ${GEMINI_API_KEY} #Pass the Gemini API key if needed
+      # Set MODEL to include "gemini" and provide GEMINI_API_KEY to use Gemini.
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./agent/log:/app/data  # Bind-mount logs to the host directory
     privileged: false
 
-  ollama:
-    image: ollama/ollama
-    container_name: ollama
-    ports:
-      - "11434:11434"
-    volumes:
-      - ollama_data:/root/.ollama #Persist data between restarts
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:11434"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
 volumes:
-  ollama_data:
+  ollama_data:  # This is not used anymore, remove this volume if you want
