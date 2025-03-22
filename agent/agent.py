@@ -16,6 +16,7 @@ RETRY_DELAY = 2  # seconds
 
 def execute_commands(commands):
     """Executes a list of shell commands and returns the output and error."""
+    print(f"Executing commands:\n{commands}")  # Print commands to stdout BEFORE execution
     try:
         process = subprocess.run(
             commands,
@@ -25,8 +26,10 @@ def execute_commands(commands):
             text=True,
             check=True  # Raise an exception if the command fails
         )
+        print(f"Commands executed successfully.")  # Print success message
         return process.stdout, process.stderr
     except subprocess.CalledProcessError as e:
+        print(f"Commands failed with error:")  # Print failure message
         return e.output, e.stderr
 
 def cleanup():
@@ -77,8 +80,8 @@ def get_ai_solution(error_message, commands, repo_url):
             else:
                 print("Max retries reached.  Returning error message.")
                 return "Error communicating with AI after multiple retries. Check Ollama is running and accessible."
-            except json.JSONDecodeError:
-                return "Error decoding JSON response from AI."
+        except json.JSONDecodeError:
+            return "Unexpected error occurred during JSON decoding."
 
         return "Unexpected error occurred."
 
@@ -94,7 +97,8 @@ def main():
     cd ai-agent-wordpress
     docker compose build
     """
-    print(f"Executing commands:\n{commands}")
+    print(f"Executing commands:\n{commands}")  #Print current command to stdout
+
     stdout, stderr = execute_commands(commands)
 
     if stderr:
