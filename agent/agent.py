@@ -9,7 +9,7 @@ import google.generativeai as genai
 
 load_dotenv()
 
-command = """
+COMMAND = """
 cd /tmp
 rm -fr ai-agent-wordpress
 git clone https://github.com/jlegido/ai-agent-wordpress
@@ -55,7 +55,6 @@ def generate_response(prompt):
 
 def execute_command(command):
     """Executes a shell command and captures stdout and stderr."""
-    print(f"Executing command:\n{command}")
     result = subprocess.run(command, shell=True, capture_output=True, text=True)
     stdout = result.stdout.strip()
     stderr = result.stderr.strip()
@@ -65,11 +64,6 @@ def execute_command(command):
     output_history.append(output_entry)
     
     return stdout, stderr
-
-def extract_code(text):
-    """Extracts code blocks from a markdown-formatted text."""
-    code_blocks = re.findall(r"```(?:\w+)?\n(.*?)\n```", text, re.DOTALL)
-    return code_blocks
 
 def log_to_file(content):
     """Logs the given content to a file with a timestamp."""
@@ -150,7 +144,8 @@ Critical error: [most relevant error excerpt]
         f"STDOUT: {entry['stdout'][-500:]}\n"  # Truncate long outputs
         f"STDERR: {entry['stderr'][-500:]}\n"
         f"{'-'*40}"
-        for i, entry in enumerate(output_history[-3:])  # Last 3 attempts
+        #for i, entry in enumerate(output_history[-3:])  # Last 3 attempts
+        for i, entry in enumerate(output_history)  # Last 3 attempts
     ])
 
     prompt = f"""## SYSTEM ROLE ##
@@ -175,6 +170,7 @@ def main():
     rotate_log_file()
     attempt = 1  # attempt number
     is_success = False
+    command  = COMMAND
 
     while not is_success and attempt <= max_attempts: # limited to 3 attempts
         print(f"attempt {attempt}:")
@@ -185,14 +181,38 @@ def main():
         # TODO: ask LLM, based in stdout and stderr, if it was successful
         is_success = get_success(command, stdout, stderr)
 
-
         prompt = create_prompt(command)
-        print(f"prompt {prompt}")
+        print("---------------------------------- PROMPT -----------------------------------------------------------------------")
+        print(f"{prompt}")
 
         response = generate_response(prompt)
-        print(f"response {response}")
+        print("--------------------------------- RESPONSE -----------------------------------------------------------------")
+        print(f"{response}")
         
         # TODO: implement a function or a call to LLM to extract a command from LLM response
+        command = extract_code(response)
+        print("-------------------------- COMMAND -------------------------------------------------------------------------")
+        print(f"{command}")
+
+def extract_code_no_llm(text):
+    """Extracts shell commands from markdown-formatted text."""
+    command_blocks = re.findall(r"```(?:bash|sh)?\n(.*?)\n```", text, re.DOTALL)
+    return command_blocks
+
+def extract_code(text):
+    """Extracts shell commands from markdown-formatted text."""
+    prompt = f"""You are an AI assistant that extracts command-line commands from a given response.  
+The response may contain markdown-formatted code blocks.  
+
+Extract all command-line commands enclosed in triple backticks (```bash, ```sh, or ``` without a language specifier).  
+Return only the extracted commands as a list, without explanations or formatting.  
+
+LLM Response:  
+{text}
+"""
+
+    response = generate_response(prompt)
+    return response
 
 if __name__ == "__main__":
     main()
