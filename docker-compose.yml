@@ -5,8 +5,10 @@ services:
       dockerfile: Dockerfile
     container_name: agent
     environment:
-      MODEL: ${MODEL:-default}  # Define the MODEL variable and default
-      GEMINI_API_KEY: ${GEMINI_API_KEY} #Pass the Gemini API key if needed
+      COMMAND: ${COMMAND}
+      MAX_ATTEMPTS: ${MAX_ATTEMPTS:-3}
+      MODEL: ${MODEL:-gemini}
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
       # Set MODEL to include "gemini" and provide GEMINI_API_KEY to use Gemini.
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
