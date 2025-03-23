@@ -38,10 +38,8 @@ class Agent:
             raise ValueError(
                 "GEMINI_API_KEY environment variable not set. MODEL contains gemini, but no API key provided."
             )
-
         genai.configure(api_key=self.gemini_api_key)
         model = genai.GenerativeModel("gemini-1.5-flash")
-
         try:
             response = model.generate_content(prompt)
             response_text = response.text
@@ -130,16 +128,14 @@ or unexpected outputs in either stream. Respond only with "success" or "error"."
     <solution>
     [corrected code using markdown format]
     </solution>"""
-
         history_str = "\n\n".join([
             f"Attempt #{i+1}:\n"
             f"COMMAND: {entry['command']}\n"
-            f"STDOUT: {entry['stdout'][-500:]}\n"  # Truncate long outputs
-            f"STDERR: {entry['stderr'][-500:]}\n"
+            f"STDOUT: {entry['stdout']}\n"  # Truncate long outputs
+            f"STDERR: {entry['stderr']}\n"
             f"{'-'*40}"
             for i, entry in enumerate(self.output_history)  # Include all attempts
         ])
-
         prompt = f"""## SYSTEM ROLE ##
     {system_message}
 
@@ -154,7 +150,6 @@ or unexpected outputs in either stream. Respond only with "success" or "error"."
     2. Maintain original functionality
     3. Include validation steps
     4. Output ONLY the formatted response template"""
-
         return prompt
 
     def extract_code(self, text):
@@ -168,7 +163,6 @@ Return only the extracted commands as a list, without explanations or formatting
 LLM Response:  
 {text}
 """
-
         response = self.generate_response(prompt)
         return response
 
@@ -179,7 +173,6 @@ LLM Response:
         self.rotate_log_file()
         attempt = 1
         is_success = False
-
         while not is_success and attempt <= self.max_attempts:
             print(f"attempt {attempt}:")
             print(f"command {self.command}")
