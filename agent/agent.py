@@ -9,8 +9,20 @@ import google.generativeai as genai
 
 load_dotenv()
 
+command = """
+cd /tmp
+rm -fr ai-agent-wordpress
+git clone https://github.com/jlegido/ai-agent-wordpress
+cd ai-agent-wordpress
+docker compose build
+"""
+max_attempts=3
+
 MODEL = os.environ.get("MODEL", "gemini")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+
+# Store command output history
+output_history = []
 
 def call_gemini_api(prompt):
     """Calls the Gemini API with the given prompt."""
@@ -41,38 +53,23 @@ def generate_response(prompt):
     else:
         return "Error: Gemini API not enabled. Set MODEL environment variable to include 'gemini'."
 
-def execute_commands(commands):
-    """Executes a list of shell commands and returns the output and error."""
-    print(f"Executing commands:\n{commands}")
-    try:
-        process = subprocess.run(
-            commands,
-            shell=True,
-            cwd="/tmp",
-            capture_output=True,
-            text=True,
-            check=True  # Raise an exception if the command fails
-        )
-        print(f"Commands executed successfully.")
-        return process.stdout, process.stderr
-    except subprocess.CalledProcessError as e:
-        print(f"Commands failed with error:")
-        return e.stdout, e.stderr  # Capture stdout even on error
+def execute_command(command):
+    """Executes a shell command and captures stdout and stderr."""
+    print(f"Executing command:\n{command}")
+    result = subprocess.run(command, shell=True, capture_output=True, text=True)
+    stdout = result.stdout.strip()
+    stderr = result.stderr.strip()
+    
+    # Store outputs in memory
+    output_entry = {"command": command, "stdout": stdout, "stderr": stderr}
+    output_history.append(output_entry)
+    
+    return stdout, stderr
 
 def extract_code(text):
     """Extracts code blocks from a markdown-formatted text."""
     code_blocks = re.findall(r"```(?:\w+)?\n(.*?)\n```", text, re.DOTALL)
     return code_blocks
-
-def cleanup():
-    """Removes the ai-agent-wordpress directory if it exists."""
-    try:
-        repo_dir = "/tmp/ai-agent-wordpress"
-        if os.path.exists(repo_dir):
-            shutil.rmtree(repo_dir)
-            print(f"Successfully removed {repo_dir}")
-    except Exception as e:
-        print(f"Error during cleanup: {e}")
 
 def log_to_file(content):
     """Logs the given content to a file with a timestamp."""
@@ -95,73 +92,107 @@ def rotate_log_file():
     except Exception as e:
         print(f"Error rotating log file: {e}")
 
-def get_ai_solution(error_message, commands, repo_url, attempt=1):
-    """Sends the error message, commands, and repo URL to Gemini and returns the response."""
-    prompt = f"""You are a Docker expert.  This is attempt {attempt} to solve the problem. The following error occurred while trying to build a Docker Compose project:
-
-    Error Message:
-    {error_message}
-
-    Commands Executed (Previous Attempt):
-    {commands}
-
-    Git Repository:
-    {repo_url}
-
-    Provide a concise explanation of the error and suggest a fix. Format your response as a markdown code block with the corrected commands or Dockerfile snippets. Only provide a full code example.
-    """
-
-    response = generate_response(prompt)
-    return response
-
 def main():
-    """Main function to execute the commands, handle errors, and interact with Gemini."""
-
+    """main function to execute the commands, handle errors, and interact with gemini."""
     rotate_log_file()
-    cleanup()
+    attempt = 1  # attempt number
+    is_success = False
 
-    repo_url = "https://github.com/jlegido/ai-agent-wordpress"
-    initial_commands = """
-    cd /tmp
-    rm -fr ai-agent-wordpress
-    git clone https://github.com/jlegido/ai-agent-wordpress
-    cd ai-agent-wordpress
-    docker compose build
-    """
-
-    commands = initial_commands  # Start with initial commands
-    stderr = "No Error"  # Initialize
-
-    attempt = 1  # Attempt number
-
-    while "Error" in stderr and attempt <= 3: # Limited to 3 attempts
-        print(f"Attempt {attempt}:")
-        stdout, stderr = execute_commands(commands)
-
-        if stderr:
-            print("Error output:")
-            print(stderr)
-
-            ai_solution = get_ai_solution(stderr, commands, repo_url, attempt) # Send attempt number
-            print("AI Response:", ai_solution)
-
-            code_blocks = extract_code(ai_solution)
-            if code_blocks:
-                commands = code_blocks[0]  # Use the first code block as commands
-                print(f"Extracted commands:\n{commands}")
-            else:
-                print("No code block found in AI response.  Stopping.")
-                break  # Stop if no code is found.
-
-        else:
-            print("Command execution successful!")
-            print("Standard output:")
-            print(stdout)
-            break  # Exit loop if successful
-
+    while not is_success and attempt <= 3: # limited to 3 attempts
+        print(f"attempt {attempt}:")
+        stdout, stderr = execute_command(command)
         attempt += 1
 
-    cleanup()
+        # TODO: ask LLM, based in stdout and stderr, if it was successful
+        is_success = get_success(command, stdout, stderr)
+
+def get_success(command: str, stdout: str, stderr: str) -> bool:
+    """ask LLM, based in stdout and stderr, if it was successful"""
+    prompt = f"""SYSTEM: Analyze the command execution results. Consider both stdout and stderr.
+Respond with exactly one word: "success" or "error".
+
+USER:
+Command executed: {command}
+---
+STDOUT:
+{stdout}
+---
+STDERR:
+{stderr}
+---
+Analysis: Did this command execute successfully? Consider any error messages
+or unexpected outputs in either stream. Respond only with "success" or "error"."""
+    response = generate_response(prompt)
+    if "success" in response:
+        return True
+    return False
+
+def create_prompt(user_input):
+    """Generates a structured debugging prompt with failure history."""
+    system_message = """You are a senior software engineer. Analyze previous failed attempts and:
+1. Identify the root cause of errors
+2. Propose a corrected solution
+3. Explain key changes briefly
+
+Format response:
+<analysis>
+Root cause: [concise identification of main issue]
+Critical error: [most relevant error excerpt]
+</analysis>
+
+<solution>
+[corrected code using markdown format]
+</solution>"""
+
+    history_str = "\n\n".join([
+        f"Attempt #{i+1}:\n"
+        f"COMMAND: {entry['command']}\n"
+        f"STDOUT: {entry['stdout'][-500:]}\n"  # Truncate long outputs
+        f"STDERR: {entry['stderr'][-500:]}\n"
+        f"{'-'*40}"
+        for i, entry in enumerate(output_history[-3:])  # Last 3 attempts
+    ])
+
+    prompt = f"""## SYSTEM ROLE ##
+{system_message}
+
+## DEBUGGING HISTORY ##
+{history_str or 'No previous attempts recorded'}
+
+## CURRENT TASK ##
+{user_input}
+
+## REQUIREMENTS ##
+1. Cross-verify against all previous errors
+2. Maintain original functionality
+3. Include validation steps
+4. Output ONLY the formatted response template"""
+
+    return prompt
+
+def main():
+    """main function to execute the commands, handle errors, and interact with gemini."""
+    rotate_log_file()
+    attempt = 1  # attempt number
+    is_success = False
+
+    while not is_success and attempt <= max_attempts: # limited to 3 attempts
+        print(f"attempt {attempt}:")
+        print(f"command {command}")
+        stdout, stderr = execute_command(command)
+        attempt += 1
+
+        # TODO: ask LLM, based in stdout and stderr, if it was successful
+        is_success = get_success(command, stdout, stderr)
+
+
+        prompt = create_prompt(command)
+        print(f"prompt {prompt}")
+
+        response = generate_response(prompt)
+        print(f"response {response}")
+        
+        # TODO: implement a function or a call to LLM to extract a command from LLM response
 
 if __name__ == "__main__":
     main()
