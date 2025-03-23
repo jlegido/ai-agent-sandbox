@@ -6,19 +6,8 @@ from datetime import datetime
 
 from dotenv import load_dotenv
 import google.generativeai as genai
-import shlex # Import shlex for safer command execution
 
 load_dotenv()
-
-'''
-COMMAND = """
-cd /tmp
-rm -fr ai-agent-wordpress
-git clone https://github.com/jlegido/ai-agent-wordpress
-cd ai-agent-wordpress
-docker compose build
-"""
-'''
 
 class Agent:
     """
@@ -75,34 +64,14 @@ class Agent:
 
     def execute_command(self, command):
         """Executes a shell command and captures stdout and stderr."""
-        print(f"Executing command:\n{command}")
-
-        try:
-            # Use shlex.split to handle spaces and quotes correctly
-            command_list = shlex.split(command)
-            result = subprocess.run(command_list, capture_output=True, text=True, check=False) #Added Check=False
-            stdout = result.stdout.strip()
-            stderr = result.stderr.strip()
-
-            # Log the return code
-            return_code = result.returncode
-            print(f"Command finished with return code: {return_code}") #added for debugging
-            
-        except FileNotFoundError as e:
-            # Handle cases where the command is not found
-            stdout = ""
-            stderr = f"FileNotFoundError: {e}. The command '{command}' could not be found."
-            return_code = 127 # Standard code for "command not found"
-        except Exception as e:
-            # Handle other potential exceptions during command execution
-            stdout = ""
-            stderr = f"An unexpected error occurred while executing the command: {e}"
-            return_code = 1 # Generic error code
-            
+        result = subprocess.run(command, shell=True, capture_output=True, text=True)
+        stdout = result.stdout.strip()
+        stderr = result.stderr.strip()
+        # Log the return code
+        return_code = result.returncode
         # Store outputs in memory
         output_entry = {"command": command, "stdout": stdout, "stderr": stderr, "return_code": return_code}
         self.output_history.append(output_entry)
-        
         return stdout, stderr
 
     def log_to_file(self, content):
